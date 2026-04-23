@@ -1,3 +1,9 @@
 <Solution>
   <Project Path="ConsoleAppAITest/ConsoleAppAITest.csproj" />
+  <Project Path="TextGenerationDemo/TextGenerationDemo.csproj" />
+  <Project Path="ChatHistoryDemo/ChatHistoryDemo.csproj" />
+  <Project Path="DocumentProcessingDemo/DocumentProcessingDemo.csproj" />
+  <Project Path="PluginDemo/PluginDemo.csproj" />
+  <Project Path="RAGDemo/RAGDemo.csproj" />
+  <Project Path="MiniAgentDemo/MiniAgentDemo.csproj" />
 </Solution>

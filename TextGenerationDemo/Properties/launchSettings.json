@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "TextGenerationDemo": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "OLLAMA_ENDPOINT": "http://127.0.0.1:11434",
+        "OLLAMA_MODEL": "llama3"
+      }
+    }
+  }
+}

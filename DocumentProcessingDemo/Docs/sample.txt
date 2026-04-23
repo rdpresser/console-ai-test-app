@@ -1,0 +1,57 @@
+HEALTHCARE CLAIM AUDIT REPORT
+Audit Period: Q1 2026
+Prepared by: Claims Audit Department
+Document Reference: AUD-2026-Q1-007
+
+EXECUTIVE SUMMARY
+
+This report covers the audit of 847 healthcare claims processed during Q1 2026 across three provider networks. The total value under review amounts to $4.2 million. Key findings indicate a 12% denial rate, with the primary driver being missing pre-authorization documentation (38% of denials), followed by duplicate claim submissions (24%) and incorrect billing codes (21%).
+
+SECTION 1 – CLAIM VOLUME AND FINANCIAL SUMMARY
+
+Total claims received: 847
+Total claims approved: 695 ($3.1M)
+Total claims denied: 101 ($820K)
+Total claims pending: 51 ($280K)
+
+Top providers by claim volume:
+1. City General Hospital – 312 claims – $1.4M
+2. Regional Orthopedic Center – 198 claims – $980K
+3. Metro Emergency Room – 156 claims – $620K
+4. Riverside Family Clinic – 89 claims – $340K
+5. Lakeside Diagnostics – 92 claims – $480K (highest denial rate: 28%)
+
+SECTION 2 – DENIAL ANALYSIS
+
+The most common denial reasons identified during this audit period are:
+
+Missing pre-authorization (38% of denials): Claims submitted for procedures requiring prior approval from the payer were not accompanied by the corresponding authorization number. Staff training has been recommended for the top three offending providers.
+
+Duplicate submissions (24% of denials): Multiple billing submissions for the same service date and patient were detected. This is a known issue with the legacy billing system at City General Hospital, which is scheduled for migration in Q2 2026.
+
+Invalid or incorrect procedure codes (21% of denials): ICD-10 and CPT codes did not match the documented diagnosis or were outdated codes no longer accepted under the 2026 fee schedule.
+
+Exceeded benefit limits (17% of denials): Claims exceeded the annual maximum benefit for specific categories including physical therapy (30 visits/year) and mental health services (60 days/year).
+
+SECTION 3 – HIGH-RISK FLAGS
+
+The following claims have been flagged for secondary review due to anomalies detected during automated screening:
+
+CLM-2026-0421: $48,000 surgical claim submitted 90 days after service date. Provider: City General. Reason for flag: late submission combined with unusually high amount for outpatient procedure.
+
+CLM-2026-0589: Duplicate claim for same patient (DOB: 1978-03-14) and procedure (knee arthroscopy) submitted by two different providers on the same date. Possible coordination-of-benefits issue.
+
+CLM-2026-0712: Emergency room claim for patient admitted to a non-network facility. Pre-approval was not obtained. Patient eligibility for out-of-network benefits must be verified.
+
+SECTION 4 – RECOMMENDATIONS
+
+1. Implement automated pre-authorization validation at claim intake to reduce denial rate by an estimated 6-8%.
+2. Upgrade the legacy billing system at City General Hospital to eliminate duplicate submissions.
+3. Conduct provider education sessions on 2026 CPT/ICD-10 code updates before Q2 billing cycle.
+4. Review benefit limit tracking for high-utilization patients to proactively notify members before limits are reached.
+
+SECTION 5 – NEXT STEPS
+
+A follow-up audit is scheduled for Q2 2026 (July 15). Providers with denial rates exceeding 20% will be subject to a corrective action plan. The claims processing team will implement the pre-authorization validation module by May 31, 2026.
+
+END OF REPORT

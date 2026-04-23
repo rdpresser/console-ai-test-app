@@ -6,13 +6,6 @@
         "OLLAMA_ENDPOINT": "http://127.0.0.1:11434",
         "OLLAMA_MODEL": "llama3"
       }
-    },
-    "Container (Dockerfile)": {
-      "commandName": "Docker",
-      "environmentVariables": {
-        "OLLAMA_ENDPOINT": "http://host.containers.internal:11434",
-        "OLLAMA_MODEL": "llama3"
-      }
     }
   }
 }

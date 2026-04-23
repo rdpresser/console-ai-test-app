@@ -13,13 +13,12 @@ Simple .NET console app that uses Microsoft Semantic Kernel to call a local Olla
 
 - Framework: .NET 10.0
 - Entry point: ConsoleAppAITest/Program.cs
-- Container support: ConsoleAppAITest/Dockerfile
 - Solution: ConsoleAppAITest.slnx
 
 ## Prerequisites
 
 1. .NET SDK 10+
-2. Podman (if running Ollama in a container)
+2. Ollama local service available at port 11434
 3. Ollama model available (example: llama3)
 
 ## Configuration
@@ -31,17 +30,12 @@ The app reads these environment variables:
 
 Defaults used by the app:
 
-- Host run default endpoint: http://127.0.0.1:11434
-- Container run default endpoint: http://host.containers.internal:11434
+- Endpoint: http://127.0.0.1:11434
 - Default model: llama3
 
-## Run Modes
+## Run
 
-### 1) Run App on Windows Host
-
-Use endpoint:
-
-- http://127.0.0.1:11434
+Use endpoint: http://127.0.0.1:11434
 
 Command:
 
@@ -57,25 +51,7 @@ $env:OLLAMA_MODEL="llama3"
 dotnet run --project .\ConsoleAppAITest\ConsoleAppAITest.csproj
 ~~~
 
-### 2) Run App in Container
-
-When the app runs in a container, localhost points to the app container itself, not your host machine.
-Use endpoint:
-
-- http://host.containers.internal:11434
-
-If you run from Visual Studio Docker profile, this endpoint is already set in launchSettings.json.
-
-If you run manually, set env vars in your app container:
-
-~~~powershell
-podman run --rm \
-  -e OLLAMA_ENDPOINT=http://host.containers.internal:11434 \
-  -e OLLAMA_MODEL=llama3 \
-  <your-app-image>
-~~~
-
-## Podman Setup for Ollama
+## Optional: Ollama in Podman (Only Ollama, Not This App)
 
 Start Ollama container:
 
@@ -114,12 +90,6 @@ Expected HTTP body includes:
 
 - Ollama is running
 
-From the Ollama container itself:
-
-~~~powershell
-podman exec -it ollama ollama list
-~~~
-
 ## Troubleshooting
 
 ### Error: Connection refused
@@ -127,7 +97,7 @@ podman exec -it ollama ollama list
 Common causes:
 
 1. Ollama container is not running
-2. Wrong endpoint for the current run mode
+2. Endpoint not set to http://127.0.0.1:11434
 3. Port mapping missing or conflicting
 4. Model not downloaded yet
 
@@ -135,9 +105,7 @@ Fix checklist:
 
 1. Start Ollama container
 2. Confirm port 11434 is exposed by Podman
-3. Confirm endpoint:
-   - Host run -> http://127.0.0.1:11434
-   - Container run -> http://host.containers.internal:11434
+3. Confirm endpoint: http://127.0.0.1:11434
 4. Confirm model exists:
    - podman exec -it ollama ollama list
 
@@ -157,9 +125,9 @@ Then retry app.
 dotnet build .\ConsoleAppAITest.slnx
 ~~~
 
-## Visual Studio Launch Profiles (Screenshot-Style Steps)
+## Visual Studio Launch Profile (Screenshot-Style Steps)
 
-### Host Profile (ConsoleAppAITest)
+### Profile: ConsoleAppAITest
 
 [Step 1 - Open Solution]
 
@@ -180,27 +148,6 @@ dotnet build .\ConsoleAppAITest.slnx
 - Press F5 (Debug) or Ctrl+F5 (Run without debugging).
 - In the console output, confirm startup lines show the selected endpoint and model.
 
-### Docker Profile (Container (Dockerfile))
-
-[Step 1 - Ensure Ollama Is Running]
-
-- Confirm Ollama container is up and exposing port 11434.
-
-[Step 2 - Select Profile]
-
-- In the startup target dropdown, choose Container (Dockerfile).
-
-[Step 3 - Confirm Container Endpoint]
-
-- Open ConsoleAppAITest/Properties/launchSettings.json.
-- Confirm OLLAMA_ENDPOINT is set to http://host.containers.internal:11434.
-- Confirm OLLAMA_MODEL is set to llama3.
-
-[Step 4 - Run]
-
-- Start with F5 or Ctrl+F5.
-- Verify the app prints the container endpoint and receives a model response.
-
 ### What You Should See
 
 [Host Mode Expected]
@@ -209,25 +156,17 @@ dotnet build .\ConsoleAppAITest.slnx
 - Using Ollama model: llama3
 - Model response text
 
-[Container Mode Expected]
-
-- Using Ollama endpoint: http://host.containers.internal:11434
-- Using Ollama model: llama3
-- Model response text
-
 ### FAQ (Visual Studio Profile Selection)
 
-Q1: Why do I get connection refused only when using the Docker profile?
-
-- Cause: The app is running in a container, but endpoint is set to localhost/127.0.0.1.
-- Fix: Use Container (Dockerfile) profile with OLLAMA_ENDPOINT set to http://host.containers.internal:11434.
-
-Q2: Why does it work from terminal but fail in Visual Studio?
+Q1: Why does it work from terminal but fail in Visual Studio?
 
 - Cause: Visual Studio is launching a different startup profile than expected.
-- Fix: Check the startup target dropdown and select the intended profile before running:
-   - Host run: ConsoleAppAITest
-   - Container run: Container (Dockerfile)
+- Fix: Check the startup target dropdown and select ConsoleAppAITest.
+
+Q2: Why do I still get connection refused?
+
+- Cause: Ollama is not listening on local port 11434 or model is missing.
+- Fix: Confirm http://127.0.0.1:11434 returns "Ollama is running" and run podman exec -it ollama ollama list.
 
 ## Notes
 

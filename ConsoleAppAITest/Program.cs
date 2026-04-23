@@ -1,8 +1,6 @@
 ﻿using Microsoft.SemanticKernel;
 
-var defaultEndpoint = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true"
-    ? "http://host.containers.internal:11434"
-    : "http://127.0.0.1:11434";
+var defaultEndpoint = "http://127.0.0.1:11434";
 
 var endpointValue = Environment.GetEnvironmentVariable("OLLAMA_ENDPOINT") ?? defaultEndpoint;
 var modelId = Environment.GetEnvironmentVariable("OLLAMA_MODEL") ?? "llama3";
@@ -36,7 +34,7 @@ try
 catch (HttpRequestException ex)
 {
     Console.WriteLine($"Connection error talking to Ollama: {ex.Message}");
-    Console.WriteLine("Hint: host mode -> http://127.0.0.1:11434, container mode -> http://host.containers.internal:11434");
+    Console.WriteLine("Hint: use http://127.0.0.1:11434 and ensure Ollama is running on this machine.");
 }
 catch (Exception ex)
 {

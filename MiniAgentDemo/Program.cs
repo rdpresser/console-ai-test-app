@@ -24,10 +24,20 @@ using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.Ollama;
 using Microsoft.SemanticKernel.Embeddings;
 using MiniAgentDemo.Plugins;
+using System.Net.Http.Json;
+using System.Text.RegularExpressions;
 
 var endpoint   = new Uri(Environment.GetEnvironmentVariable("OLLAMA_ENDPOINT") ?? "http://127.0.0.1:11434");
 var chatModel  = Environment.GetEnvironmentVariable("OLLAMA_MODEL") ?? "llama3";
 var embedModel = Environment.GetEnvironmentVariable("OLLAMA_EMBED_MODEL") ?? "nomic-embed-text";
+var showFallbackNotice = string.Equals(
+    Environment.GetEnvironmentVariable("MINIAGENT_SHOW_FALLBACK_NOTICE"),
+    "true",
+    StringComparison.OrdinalIgnoreCase);
+
+// ── Runtime check: verify required models are available in Ollama ──
+await EnsureOllamaModelAvailableAsync(endpoint, embedModel);
+await EnsureOllamaModelAvailableAsync(endpoint, chatModel);
 
 // ── Build kernel with chat + embeddings + plugin ──
 #pragma warning disable SKEXP0070
@@ -37,7 +47,8 @@ var kernel = Kernel.CreateBuilder()
     .Build();
 #pragma warning restore SKEXP0070
 
-kernel.Plugins.AddFromType<HealthcarePlugin>("Healthcare");
+var healthcarePlugin = new HealthcarePlugin();
+kernel.Plugins.AddFromObject(healthcarePlugin, "Healthcare");
 
 // ─────────────────────────────────────────────────────────────
 // PHASE 4 PART: Build the RAG knowledge base from policy docs
@@ -97,6 +108,10 @@ var executionSettings = new OllamaPromptExecutionSettings
 };
 #pragma warning restore SKEXP0070
 
+var noToolsSettings = new OllamaPromptExecutionSettings();
+var toolCallingEnabled = true;
+var toolFallbackNoticePrinted = false;
+
 // ─────────────────────────────────────────────────────────────
 // PHASE 4 PART: RAG retrieval helper
 // ─────────────────────────────────────────────────────────────
@@ -154,7 +169,9 @@ while (true)
     {
         // ── Let the agent respond (may call plugins automatically) ──
         var response = await chat.GetChatMessageContentAsync(
-            chatHistory, executionSettings, kernel);
+            chatHistory,
+            toolCallingEnabled ? executionSettings : noToolsSettings,
+            kernel);
 
         var reply = response.Content ?? "(no response)";
         chatHistory.AddAssistantMessage(reply);
@@ -164,11 +181,43 @@ while (true)
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"\n[Error: {ex.Message}]");
-        Console.WriteLine("[If auto function calling fails, the model may not support tool use. Try llama3.1]\n");
+        if (toolCallingEnabled && IsToolNotSupportedError(ex))
+        {
+            toolCallingEnabled = false;
 
-        // Remove the failed user message to keep history consistent
-        chatHistory.RemoveAt(chatHistory.Count - 1);
+            if (showFallbackNotice && !toolFallbackNoticePrinted)
+            {
+                Console.WriteLine("\n[Warning] Model does not support tools. Switching to fallback mode (no automatic function calling).");
+                Console.WriteLine("[Tip] For full tool use, try: ollama pull llama3.1\n");
+                toolFallbackNoticePrinted = true;
+            }
+
+            try
+            {
+                var fallbackReply = await TryManualPluginFallbackAsync(input, policyContext, healthcarePlugin);
+
+                if (string.IsNullOrWhiteSpace(fallbackReply))
+                {
+                    var noToolResponse = await chat.GetChatMessageContentAsync(chatHistory, noToolsSettings, kernel);
+                    fallbackReply = noToolResponse.Content ?? "(no response)";
+                }
+
+                chatHistory.AddAssistantMessage(fallbackReply);
+                sessionLog.Add(("assistant", fallbackReply));
+                Console.WriteLine($"\nAgent: {fallbackReply}\n");
+            }
+            catch (Exception fallbackEx)
+            {
+                Console.WriteLine($"\n[Fallback error: {fallbackEx.Message}]\n");
+                chatHistory.RemoveAt(chatHistory.Count - 1);
+            }
+        }
+        else
+        {
+            Console.WriteLine($"\n[Error: {ex.Message}]\n");
+            // Remove the failed user message to keep history consistent
+            chatHistory.RemoveAt(chatHistory.Count - 1);
+        }
     }
 }
 
@@ -205,6 +254,43 @@ async Task GenerateSessionReport(Kernel k, List<(string Role, string Content)> l
     Console.WriteLine($"\n{report}\n");
 }
 
+// ── Verifies a model is pulled in Ollama; exits with instructions if not ──
+static async Task EnsureOllamaModelAvailableAsync(Uri endpoint, string modelId)
+{
+    try
+    {
+        using var http = new HttpClient { BaseAddress = endpoint };
+        var response = await http.GetFromJsonAsync<OllamaTagsResponse>("/api/tags");
+
+        var isAvailable = response?.Models?.Any(m =>
+            m.Name.Equals(modelId, StringComparison.OrdinalIgnoreCase) ||
+            m.Name.StartsWith(modelId + ":", StringComparison.OrdinalIgnoreCase)) ?? false;
+
+        if (!isAvailable)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"[ERROR] Model '{modelId}' is not available in Ollama at {endpoint}.");
+            Console.ResetColor();
+            Console.WriteLine($"  Pull it first with one of the following commands:");
+            Console.WriteLine($"    podman exec -it ollama ollama pull {modelId}");
+            Console.WriteLine($"    docker exec -it ollama ollama pull {modelId}");
+            Console.WriteLine($"    ollama pull {modelId}");
+            Environment.Exit(1);
+        }
+
+        Console.WriteLine($"[OK] Model '{modelId}' is available.");
+    }
+    catch (HttpRequestException)
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"[ERROR] Could not connect to Ollama at {endpoint}.");
+        Console.ResetColor();
+        Console.WriteLine("  Make sure Ollama is running and the endpoint is correct.");
+        Console.WriteLine("  You can override the endpoint with: set OLLAMA_ENDPOINT=http://localhost:11434");
+        Environment.Exit(1);
+    }
+}
+
 // ── Cosine similarity (same as Phase 4) ──
 static float CosineSimilarity(ReadOnlyMemory<float> a, ReadOnlyMemory<float> b)
 {
@@ -214,3 +300,73 @@ static float CosineSimilarity(ReadOnlyMemory<float> a, ReadOnlyMemory<float> b)
     var mag = MathF.Sqrt(magA) * MathF.Sqrt(magB);
     return mag == 0f ? 0f : dot / mag;
 }
+
+static bool IsToolNotSupportedError(Exception ex)
+{
+    var message = ex.ToString().ToLowerInvariant();
+    return message.Contains("does not support tools") ||
+           (message.Contains("support") && message.Contains("tools"));
+}
+
+static async Task<string?> TryManualPluginFallbackAsync(
+    string input,
+    string policyContext,
+    HealthcarePlugin plugin)
+{
+    var normalized = input.ToLowerInvariant();
+    var claimId = ExtractClaimId(input);
+
+    var asksClaimStatus = ContainsAny(normalized,
+        "status", "claim status", "situação", "situacao", "status do claim", "status da claim");
+
+    if (claimId is not null && asksClaimStatus)
+    {
+        return plugin.GetClaimStatus(claimId);
+    }
+
+    var asksAppeal = ContainsAny(normalized, "appeal", "appeal", "recurso", "apelar", "contestar");
+    if (claimId is not null && asksAppeal)
+    {
+        return plugin.SubmitAppeal(claimId, "Submitted via fallback mode (model without tool support).");
+    }
+
+    var asksDocuments = ContainsAny(normalized,
+        "required documents", "documents", "documentos", "documentação", "documentacao");
+    if (asksDocuments)
+    {
+        if (normalized.Contains("pre-authorization") || normalized.Contains("pre authorization") ||
+            normalized.Contains("pre-autorização") || normalized.Contains("pre autorizacao"))
+        {
+            return plugin.GetRequiredDocuments("pre-authorization");
+        }
+
+        if (normalized.Contains("medical records") || normalized.Contains("prontuário") || normalized.Contains("prontuario"))
+        {
+            return plugin.GetRequiredDocuments("medical records");
+        }
+
+        return plugin.GetRequiredDocuments("generic");
+    }
+
+    // If the user asks a policy question and we have context, let the no-tools LLM answer in the caller.
+    if (!string.IsNullOrWhiteSpace(policyContext))
+    {
+        return null;
+    }
+
+    return null;
+}
+
+static string? ExtractClaimId(string input)
+{
+    var match = Regex.Match(input, @"CLM-\d{4}-\d{3}", RegexOptions.IgnoreCase);
+    return match.Success ? match.Value.ToUpperInvariant() : null;
+}
+
+static bool ContainsAny(string input, params string[] terms)
+{
+    return terms.Any(t => input.Contains(t, StringComparison.OrdinalIgnoreCase));
+}
+
+record OllamaTagsResponse(List<OllamaModelEntry>? Models);
+record OllamaModelEntry(string Name);

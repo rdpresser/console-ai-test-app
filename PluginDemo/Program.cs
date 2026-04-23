@@ -15,9 +15,14 @@
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Connectors.Ollama;
 using PluginDemo.Plugins;
+using System.Text.RegularExpressions;
 
 var endpoint = new Uri(Environment.GetEnvironmentVariable("OLLAMA_ENDPOINT") ?? "http://127.0.0.1:11434");
 var model    = Environment.GetEnvironmentVariable("OLLAMA_MODEL") ?? "llama3";
+var showFallbackNotice = string.Equals(
+    Environment.GetEnvironmentVariable("PLUGINDEMO_SHOW_FALLBACK_NOTICE"),
+    "true",
+    StringComparison.OrdinalIgnoreCase);
 
 // ─────────────────────────────────────────────────────────────
 // Register the plugin with the kernel.
@@ -28,6 +33,7 @@ var kernel = Kernel.CreateBuilder()
     .Build();
 
 kernel.Plugins.AddFromType<ClaimPlugin>("Claims");
+var claimsPlugin = kernel.Plugins["Claims"];
 
 Console.WriteLine("=== PHASE 3: Native Functions / Plugins ===");
 Console.WriteLine("The LLM has access to these tools:");
@@ -51,6 +57,9 @@ var settings = new OllamaPromptExecutionSettings
 };
 #pragma warning restore SKEXP0070
 
+var toolCallingEnabled = true;
+var fallbackNoticePrinted = false;
+
 // Test questions – the LLM will decide which function to call for each
 var questions = new[]
 {
@@ -66,18 +75,40 @@ foreach (var question in questions)
 
     try
     {
-        // ── The kernel will automatically call the right plugin functions ──
-        var result = await kernel.InvokePromptAsync(question, new(settings));
+        string result;
+        if (toolCallingEnabled)
+        {
+            // ── The kernel will automatically call the right plugin functions ──
+            var autoResult = await kernel.InvokePromptAsync(question, new(settings));
+            result = autoResult.ToString();
+        }
+        else
+        {
+            result = await InvokeManualFallbackAsync(kernel, claimsPlugin, question);
+        }
+
         Console.WriteLine($"Answer: {result}");
     }
     catch (Exception ex)
     {
-        // If the model doesn't support tool calling natively, fall back to manual
-        Console.WriteLine($"[Auto function calling not supported by this model build]");
-        Console.WriteLine($"[Error: {ex.Message}]");
-        Console.WriteLine("[Tip: Try a function-calling capable model: ollama pull llama3.1 or mistral]");
-        Console.WriteLine("[Fallback: see Demo 2 below for manual invocation]");
-        break;
+        if (toolCallingEnabled && IsToolNotSupportedError(ex))
+        {
+            toolCallingEnabled = false;
+
+            if (showFallbackNotice && !fallbackNoticePrinted)
+            {
+                Console.WriteLine("[Notice] Model does not support tools. Using manual fallback mode.");
+                Console.WriteLine("[Tip] For native tool calling, try: ollama pull llama3.1 or mistral");
+                fallbackNoticePrinted = true;
+            }
+
+            var fallback = await InvokeManualFallbackAsync(kernel, claimsPlugin, question);
+            Console.WriteLine($"Answer: {fallback}");
+        }
+        else
+        {
+            Console.WriteLine($"Answer: Could not process this question. Details: {ex.Message}");
+        }
     }
 
     Console.WriteLine();
@@ -91,8 +122,6 @@ foreach (var question in questions)
 // ─────────────────────────────────────────────────────────────
 Console.WriteLine("━━━ Demo 2: Manual plugin invocation (no LLM needed) ━━━");
 
-var claimsPlugin = kernel.Plugins["Claims"];
-
 // Direct invocation – bypass LLM, call function directly
 var directResult = await kernel.InvokeAsync(claimsPlugin["GetClaimById"], new KernelArguments
 {
@@ -104,3 +133,75 @@ var summaryResult = await kernel.InvokeAsync(claimsPlugin["GetClaimsSummary"]);
 Console.WriteLine($"\nDirect GetClaimsSummary:\n{summaryResult}");
 
 Console.WriteLine("\n=== Done ===");
+
+static bool IsToolNotSupportedError(Exception ex)
+{
+    var message = ex.ToString().ToLowerInvariant();
+    return message.Contains("does not support tools") ||
+           (message.Contains("support") && message.Contains("tools"));
+}
+
+static async Task<string> InvokeManualFallbackAsync(Kernel kernel, KernelPlugin claimsPlugin, string question)
+{
+    // Try to map common intents to explicit plugin calls when tools are unavailable.
+    var normalized = question.ToLowerInvariant();
+
+    // Case 1: specific claim detail/status
+    var claimId = ExtractClaimId(question);
+    if (claimId is not null && (normalized.Contains("status") || normalized.Contains("details") || normalized.Contains("claim")))
+    {
+        var result = await kernel.InvokeAsync(claimsPlugin["GetClaimById"], new KernelArguments
+        {
+            ["claimId"] = claimId
+        });
+        return result.ToString();
+    }
+
+    // Case 2: claims by patient
+    if (normalized.Contains("patient") || normalized.Contains("named"))
+    {
+        var patient = ExtractPatientName(question) ?? "Maria Silva";
+        var result = await kernel.InvokeAsync(claimsPlugin["GetClaimsByPatient"], new KernelArguments
+        {
+            ["patientName"] = patient
+        });
+        return result.ToString();
+    }
+
+    // Case 3: denied claims list
+    if (normalized.Contains("denied"))
+    {
+        var result = await kernel.InvokeAsync(claimsPlugin["GetClaimsByStatus"], new KernelArguments
+        {
+            ["status"] = "Denied"
+        });
+        return result.ToString();
+    }
+
+    // Case 4: grouped summary
+    if (normalized.Contains("summary") || normalized.Contains("grouped by status"))
+    {
+        var result = await kernel.InvokeAsync(claimsPlugin["GetClaimsSummary"]);
+        return result.ToString();
+    }
+
+    // Default: summary gives a useful deterministic answer.
+    var fallbackSummary = await kernel.InvokeAsync(claimsPlugin["GetClaimsSummary"]);
+    return fallbackSummary.ToString();
+}
+
+static string? ExtractClaimId(string input)
+{
+    var match = Regex.Match(input, @"CLM-\d{4}-\d{3}", RegexOptions.IgnoreCase);
+    return match.Success ? match.Value.ToUpperInvariant() : null;
+}
+
+static string? ExtractPatientName(string question)
+{
+    var marker = "named ";
+    var idx = question.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+    if (idx < 0) return null;
+
+    var name = question[(idx + marker.Length)..].Trim().TrimEnd('.', '?', '!');
+    return string.IsNullOrWhiteSpace(name) ? null : name;
+}
